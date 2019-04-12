@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"../postgres"
@@ -44,6 +45,7 @@ func MigrateUp() {
 
 func createMigraitonTable() {
 	postgres.Exec(`
+		BEGIN;
 		CREATE TABLE IF NOT EXISTS migrations
 		(
 			version bigserial not null,
@@ -51,13 +53,15 @@ func createMigraitonTable() {
 			createdAt bigserial not null,
 			direction varchar not null
 		);
+		CREATE index index_migrations_on_versions on migrations (version);
+		COMMIT;
 	`)
 }
 
 func getLatestMigration() migrationRecord {
 	row := postgres.QueryRow(`
 		SELECT * FROM migrations
-		ORDER BY createdAt DESC
+		ORDER BY version DESC
 		LIMIT 1;
 	`)
 
@@ -159,7 +163,13 @@ func runMigrationWithMetaData(m migrationFileMetaData) {
 
 	sql := string(buf)
 
-	_, err = postgres.Exec(sql)
+	sql = fmt.Sprintf("BEGIN;\n%s\nCOMMIT;", sql)
+
+	sqlArr := strings.Split(sql, ";")
+
+	for _, query := range sqlArr {
+		_, err = postgres.Exec(query)
+	}
 
 	success := err == nil
 
